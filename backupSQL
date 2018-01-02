@@ -1,0 +1,24 @@
+#!/bin/bash
+
+TIMESTAMP=$(date +"%F")
+BACKUP_DIR="/path/to/backup/sql/"
+CONFIG_FILE="client.cnf"
+MYSQL="/usr/bin/mysql"
+MYSQLDUMP="/usr/bin/mysqldump"
+
+datum=`/bin/date +%Y%m%d`
+
+databases=`$MYSQL --defaults-extra-file=$CONFIG_FILE -e "SHOW DATABASES;" | grep -Ev "(Database|information_schema|performance_schema)"`
+
+for db in $databases; do
+    echo "Backuping database: " $db
+    $MYSQLDUMP --defaults-extra-file=$CONFIG_FILE --single-transaction --force --opt --databases ${db} | gzip > "$BACKUP_DIR$db-${datum}.sql.gz"
+done
+
+### Remove files older than 30 days ###
+#for file in "$( /usr/bin/find $BACKUP_DIR -type f -mtime +30 )"
+#do
+#  rm $file
+#done
+
+exit 0

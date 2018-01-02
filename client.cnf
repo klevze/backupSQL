@@ -1,0 +1,4 @@
+[client]
+user = backuper
+password = password 
+host = 127.0.0.1
