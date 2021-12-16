@@ -12,7 +12,7 @@ databases=`$MYSQL --defaults-extra-file=$CONFIG_FILE -e "SHOW DATABASES;" | grep
 
 for db in $databases; do
     echo "Backuping database: " $db
-    $MYSQLDUMP --defaults-extra-file=$CONFIG_FILE --single-transaction --force --opt --databases ${db} | gzip > "$BACKUP_DIR$db-${datum}.sql.gz"
+    $MYSQLDUMP --defaults-extra-file=$CONFIG_FILE --column-statistics=0 --single-transaction --force --opt --databases ${db} | gzip > "$BACKUP_DIR$db-${datum}.sql.gz"
 done
 
 ### Remove files older than 30 days ###
