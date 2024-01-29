@@ -1,0 +1,14 @@
+# Backup settings
+BACKUP_DIR="/opt/backup/sql/"
+BACKUP_RETENTION_DAYS=30
+
+# Email settings
+ADMIN_EMAIL="info@example.com"
+MAIL_SUBJECT_SUCCESS="MySQL Backup Success"
+MAIL_SUBJECT_ERRORS="MySQL Backup Errors"
+
+# SMTP settings
+SMTP_HOST=
+SMTP_PORT=
+SMTP_USERNAME=
+SMTP_PASSWORD=

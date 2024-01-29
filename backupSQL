@@ -1,24 +1,67 @@
 #!/bin/bash
 
+# Set the timestamp
 TIMESTAMP=$(date +"%F")
-BACKUP_DIR="/path/to/backup/sql/"
-CONFIG_FILE="client.cnf"
+
+# Include the backup configuration file
+BACKUP_CONFIG="$(dirname "$0")/config.cnf"
+source "$BACKUP_CONFIG"
+
+# Include the client configuration file
+CLIENT_CONFIG="$(dirname "$0")/client.cnf"
 MYSQL="/usr/bin/mysql"
 MYSQLDUMP="/usr/bin/mysqldump"
 
-datum=`/bin/date +%Y%m%d`
+# Define an array of databases to ignore during backup
+IGNORED_DATABASES=("sys" "mysql" "information_schema" "performance_schema")
 
-databases=`$MYSQL --defaults-extra-file=$CONFIG_FILE -e "SHOW DATABASES;" | grep -Ev "(Database|information_schema|performance_schema)"`
+# Get a list of all databases and redirect stdout to /dev/null
+all_databases=$("$MYSQL" --defaults-extra-file="$CLIENT_CONFIG" -e "SHOW DATABASES;" 2>/dev/null | grep -Ev "(Database)")
 
-for db in $databases; do
-    echo "Backuping database: " $db
-    $MYSQLDUMP --defaults-extra-file=$CONFIG_FILE --column-statistics=0 --single-transaction --force --opt --databases ${db} | gzip > "$BACKUP_DIR$db-${datum}.sql.gz"
+# Create an array to store databases with backup errors
+databases_with_errors=()
+
+# Function to check MySQL connection
+check_mysql_connection() {
+    if "$MYSQL" --defaults-extra-file="$CLIENT_CONFIG" -e "SELECT 1;" 2>/dev/null; then
+        echo "MySQL connection successful."
+    else
+        echo "Error: Unable to connect to MySQL. Check credentials and permissions."
+        echo "Unable to connect to MySQL. Check credentials and permissions." | /usr/sbin/ssmtp -s "MySQL Connection Error" "$ADMIN_EMAIL"
+        exit 1
+    fi
+}
+
+# Check MySQL connection before proceeding
+check_mysql_connection
+
+# Loop through each database and perform a backup if not in the IGNORED_DATABASES array
+for db in $all_databases; do
+    if [[ ! " ${IGNORED_DATABASES[@]} " =~ " $db " ]]; then
+        echo "Backing up database: $db"
+
+        # Perform mysqldump and check for errors
+        if "$MYSQLDUMP" --defaults-extra-file="$CLIENT_CONFIG" --default-character-set=utf8mb4 --single-transaction --force --opt --databases "$db" | gzip > "$BACKUP_DIR$db-$TIMESTAMP.sql.gz"; then
+            echo "Backup successful for database: $db"
+        else
+            echo "Error during backup for database: $db"
+            # Add the database to the list of databases with errors
+            databases_with_errors+=("$db")
+        fi
+    else
+        echo "Skipping backup for ignored database: $db"
+    fi
 done
 
-### Remove files older than 30 days ###
-#for file in "$( /usr/bin/find $BACKUP_DIR -type f -mtime +30 )"
-#do
-#  rm $file
-#done
+# Remove backups older than the specified retention period
+find "$BACKUP_DIR" -type f -mtime +$BACKUP_RETENTION_DAYS -exec rm {} \;
+
+# Send an email with the list of databases that encountered errors
+if [ ${#databases_with_errors[@]} -gt 0 ]; then
+    echo "Databases with backup errors:" | /usr/sbin/ssmtp -s "$MAIL_SUBJECT_ERRORS" "$ADMIN_EMAIL"
+    printf '%s\n' "${databases_with_errors[@]}" | /usr/sbin/ssmtp -s "$MAIL_SUBJECT_ERRORS" "$ADMIN_EMAIL"
+else
+    echo "All backups completed successfully." | /usr/sbin/ssmtp -s "$MAIL_SUBJECT_SUCCESS" "$ADMIN_EMAIL"
+fi
 
 exit 0
