@@ -1,0 +1,9 @@
+# Backup settings
+BACKUP_DIR="/opt/backup/sql/"
+BACKUP_RETENTION_DAYS=30
+
+# Telegram
+TELEGRAM_TOKEN=
+TELEGRAM_CHATID=
+TELEGRAM_SERVERID=ServerName
+TELEGRAM_ENABLE=false

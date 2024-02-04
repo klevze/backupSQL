@@ -4,7 +4,7 @@
 TIMESTAMP=$(date +"%F")
 
 # Include the backup configuration file
-BACKUP_CONFIG="$(dirname "$0")/config.cnf"
+BACKUP_CONFIG="$(dirname "$0")/backup.cnf"
 source "$BACKUP_CONFIG"
 
 # Include the client configuration file
@@ -13,7 +13,7 @@ MYSQL="/usr/bin/mysql"
 MYSQLDUMP="/usr/bin/mysqldump"
 
 # Define an array of databases to ignore during backup
-IGNORED_DATABASES=("sys" "mysql" "information_schema" "performance_schema")
+IGNORED_DATABASES=("sys" "mysql" "information_schema" "performance_schema" "phpmyadmin" "thewallpapers" "wallpapers76")
 
 # Get a list of all databases and redirect stdout to /dev/null
 all_databases=$("$MYSQL" --defaults-extra-file="$CLIENT_CONFIG" -e "SHOW DATABASES;" 2>/dev/null | grep -Ev "(Database)")
@@ -21,13 +21,21 @@ all_databases=$("$MYSQL" --defaults-extra-file="$CLIENT_CONFIG" -e "SHOW DATABAS
 # Create an array to store databases with backup errors
 databases_with_errors=()
 
+# Function to send a message to Telegram
+send_telegram_message() {
+    local message="$1"
+    
+    curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage" \
+        -d "chat_id=$TELEGRAM_CHATID" \
+        -d "text=$message"
+}
+
 # Function to check MySQL connection
 check_mysql_connection() {
-    if "$MYSQL" --defaults-extra-file="$CLIENT_CONFIG" -e "SELECT 1;" 2>/dev/null; then
+    if "$MYSQL" --defaults-extra-file="$CLIENT_CONFIG" -e "SELECT 1;" >/dev/null 2>&1; then
         echo "MySQL connection successful."
     else
         echo "Error: Unable to connect to MySQL. Check credentials and permissions."
-        echo "Unable to connect to MySQL. Check credentials and permissions." | /usr/sbin/ssmtp -s "MySQL Connection Error" "$ADMIN_EMAIL"
         exit 1
     fi
 }
@@ -35,33 +43,55 @@ check_mysql_connection() {
 # Check MySQL connection before proceeding
 check_mysql_connection
 
+# Print table header
+printf "|---------------------------|---------------------------|\n"
+printf "| %-25s | %-25s |\n" "Database" "Status"
+printf "|---------------------------|---------------------------|\n"
+
 # Loop through each database and perform a backup if not in the IGNORED_DATABASES array
 for db in $all_databases; do
     if [[ ! " ${IGNORED_DATABASES[@]} " =~ " $db " ]]; then
-        echo "Backing up database: $db"
+        status="Success"
 
         # Perform mysqldump and check for errors
-        if "$MYSQLDUMP" --defaults-extra-file="$CLIENT_CONFIG" --default-character-set=utf8mb4 --single-transaction --force --opt --databases "$db" | gzip > "$BACKUP_DIR$db-$TIMESTAMP.sql.gz"; then
-            echo "Backup successful for database: $db"
-        else
-            echo "Error during backup for database: $db"
+        if ! "$MYSQLDUMP" --defaults-extra-file="$CLIENT_CONFIG" --default-character-set=utf8mb4 --single-transaction --force --opt --databases "$db" | gzip > "$BACKUP_DIR$db-$TIMESTAMP.sql.gz"; then
+            status="Error"
             # Add the database to the list of databases with errors
             databases_with_errors+=("$db")
         fi
+
+        # Print colored table row
+        if [ "$status" == "Success" ]; then
+            message="Backup successful for database: $db"
+            printf "| \033[0;32m%-25s\033[0m | \033[0;32m%-25s\033[0m |\n" "$db" "$status"
+        elif [ "$status" == "Error" ]; then
+            message="Error during backup for database: $db"
+            printf "| \033[0;31m%-25s\033[0m | \033[0;31m%-25s\033[0m |\n" "$db" "$status"
+        else
+            message="Skipped backup for ignored database: $db"
+            printf "| \033[0;33m%-25s\033[0m | \033[0;33m%-25s\033[0m |\n" "$db" "Skipped"
+        fi
+
     else
-        echo "Skipping backup for ignored database: $db"
+        # Print colored table row for ignored database
+        printf "| \033[0;33m%-25s\033[0m | \033[0;33m%-25s\033[0m |\n" "$db" "Skipped"
     fi
 done
 
-# Remove backups older than the specified retention period
-find "$BACKUP_DIR" -type f -mtime +$BACKUP_RETENTION_DAYS -exec rm {} \;
+printf "|---------------------------|---------------------------|\n"
 
-# Send an email with the list of databases that encountered errors
+# Display the list of databases that encountered errors
 if [ ${#databases_with_errors[@]} -gt 0 ]; then
-    echo "Databases with backup errors:" | /usr/sbin/ssmtp -s "$MAIL_SUBJECT_ERRORS" "$ADMIN_EMAIL"
-    printf '%s\n' "${databases_with_errors[@]}" | /usr/sbin/ssmtp -s "$MAIL_SUBJECT_ERRORS" "$ADMIN_EMAIL"
+    message="Databases with backup errors on $TELEGRAM_SERVERID:\n${databases_with_errors[@]}"
+    echo -e "\n$message"
+
+    # Send the message to Telegram if TELEGRAM_ENABLE is true
+    if [ "$TELEGRAM_ENABLE" == "true" ]; then
+        send_telegram_message "$message"  >/dev/null 2>&1
+    fi
 else
-    echo "All backups completed successfully." | /usr/sbin/ssmtp -s "$MAIL_SUBJECT_SUCCESS" "$ADMIN_EMAIL"
+    message="All backups completed successfully on $TELEGRAM_SERVERID."
+    echo -e "\n$message"
 fi
 
 exit 0
