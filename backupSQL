@@ -13,7 +13,7 @@ MYSQL="/usr/bin/mysql"
 MYSQLDUMP="/usr/bin/mysqldump"
 
 # Define an array of databases to ignore during backup
-IGNORED_DATABASES=("sys" "mysql" "information_schema" "performance_schema" "phpmyadmin" "thewallpapers" "wallpapers76")
+IGNORED_DATABASES=("sys" "mysql" "information_schema" "performance_schema" "phpmyadmin")
 
 # Get a list of all databases and redirect stdout to /dev/null
 all_databases=$("$MYSQL" --defaults-extra-file="$CLIENT_CONFIG" -e "SHOW DATABASES;" 2>/dev/null | grep -Ev "(Database)")
