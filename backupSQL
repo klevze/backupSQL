@@ -52,28 +52,15 @@ printf "|---------------------------|---------------------------|\n"
 for db in $all_databases; do
     if [[ ! " ${IGNORED_DATABASES[@]} " =~ " $db " ]]; then
         status="Success"
-        # Define file names
-        temp_file="$BACKUP_DIR$db-$TIMESTAMP.sql"
-        archive_file="$BACKUP_DIR$db-$TIMESTAMP.tar.xz"
 
-        # Perform mysqldump and write to a temporary SQL file
-        if ! "$MYSQLDUMP" --defaults-extra-file="$CLIENT_CONFIG" \
-              --default-character-set=utf8mb4 --single-transaction --force --opt --databases "$db" \
-              > "$temp_file"; then
+        # Perform mysqldump and check for errors
+        if ! "$MYSQLDUMP" --defaults-extra-file="$CLIENT_CONFIG" --default-character-set=utf8mb4 --single-transaction --force --opt --databases "$db" | gzip > "$BACKUP_DIR$db-$TIMESTAMP.sql.gz"; then
             status="Error"
+            # Add the database to the list of databases with errors
             databases_with_errors+=("$db")
-        else
-            # Archive the SQL dump file using tar with xz compression.
-            # The -C option changes to the backup directory so that the stored file has just its basename.
-            if ! tar -cJf "$archive_file" -C "$BACKUP_DIR" "$(basename "$temp_file")"; then
-                status="Error"
-                databases_with_errors+=("$db")
-            fi
-            # Remove the temporary SQL file
-            rm -f "$temp_file"
         fi
 
-        # Print colored table row based on status
+        # Print colored table row
         if [ "$status" == "Success" ]; then
             message="Backup successful for database: $db"
             printf "| \033[0;32m%-25s\033[0m | \033[0;32m%-25s\033[0m |\n" "$db" "$status"
